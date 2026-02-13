@@ -1,6 +1,23 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+---
+title: Podcast Transcribe
+emoji: 🎙️
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+---
 
-## Getting Started
+# Podcast Transcribe
+
+Application de transcription audio avec [Next.js](https://nextjs.org) et l'API Whisper.
+
+## Déploiement sur Hugging Face Spaces
+
+Ce Space utilise **Docker**. Hugging Face build automatiquement l'image depuis le `Dockerfile` et expose l'app sur le port 7860.
+
+**Variable d'environnement requise** : ajoute `OPENAI_API_KEY` dans Settings → Repository secrets de ton Space pour activer la transcription via l'API Whisper.
+
+## Getting Started (développement local)
 
 First, run the development server:
 
