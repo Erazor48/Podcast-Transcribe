@@ -1,0 +1,6 @@
+# Dépendances pour la transcription locale avec openai-whisper.
+# Installation : depuis la racine du projet :
+#   python -m venv .venv
+#   .venv\Scripts\activate   (Windows) ou  source .venv/bin/activate  (Linux/macOS)
+#   pip install -r scripts/requirements.txt
+openai-whisper>=20231117
