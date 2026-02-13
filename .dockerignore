@@ -48,3 +48,11 @@ node_modules
 .gitignore
 Dockerfile
 docker-compose.yml
+
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.webm
+*.mp4
+*.mov
