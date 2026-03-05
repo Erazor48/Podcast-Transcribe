@@ -12,7 +12,6 @@ import {
   MicIcon,
 } from "lucide-react";
 import Image from "next/image";
-import Sphere from "./ui/sphere";
 import { useAudioWaveform } from "@/app/components/use-audio-waveform";
 
 interface AudioPlayerProps { }
@@ -46,6 +45,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
   const [duration, setDuration] = useState<number>(0);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [transcriptSegments, setTranscriptSegments] = useState<TranscriptSegment[]>([]);
+  const [transcriptJsonInput, setTranscriptJsonInput] = useState<string>("");
   const [transcribing, setTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -186,6 +186,25 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
     }
   }, [currentTime, transcriptSegments]);
 
+  // ——— Importer transcription Whisper (JSON) ———
+  const applyTranscriptJson = () => {
+    try {
+      const raw = transcriptJsonInput.trim();
+      if (!raw) return;
+      const data = JSON.parse(raw) as WhisperSegmentsResponse;
+      const segs = data.segments ?? (Array.isArray(data) ? data : []);
+      setTranscriptSegments(
+        segs.map((s) => ({
+          start: Number(s.start),
+          end: Number(s.end),
+          text: String(s.text ?? "").trim(),
+        }))
+      );
+    } catch {
+      console.error("JSON de transcription invalide");
+    }
+  };
+
   const updateSegmentText = (index: number, text: string) => {
     setTranscriptSegments((prev) =>
       prev.map((s, i) => (i === index ? { ...s, text } : s))
@@ -304,30 +323,27 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
       <div className="max-w-2xl w-full space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Audio Player</h1>
+          <label className="flex items-center cursor-pointer">
+            <UploadIcon className="w-5 h-5 mr-2" />
+            <span>Upload</span>
+            <input
+              type="file"
+              accept="audio/*"
+              multiple
+              className="hidden"
+              onChange={handleUpload}
+            />
+          </label>
         </div>
         <Card>
           <CardContent className="flex flex-col gap-4 p-6">
-            {/* if (!audio || !tracks.length) return;*/}
-            <label className="rounded-full w-24 h-24 object-cover mx-auto cursor-pointer">
-              {currentTrack
-                ? <Image
-                  src="/music.svg"
-                  alt="Album Cover"
-                  width={100}
-                  height={100}
-                  className="rounded-full w-24 h-24 object-cover mx-auto"
-                />
-                : <Sphere icon={UploadIcon} size={100} color="#337180" />
-              }
-              <input
-                type="file"
-                accept="audio/*"
-                multiple
-                className="hidden"
-                onChange={handleUpload}
-              />
-            </label>
-
+            <Image
+              src="/music.svg"
+              alt="Album Cover"
+              width={100}
+              height={100}
+              className="rounded-full w-24 h-24 object-cover mx-auto"
+            />
             <div className="text-center">
               <h2 className="text-xl font-bold">
                 {currentTrack?.title ?? "Audio Title"}
@@ -408,6 +424,16 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
                   <MicIcon className="w-4 h-4 mr-2" />
                   {transcribing ? "Transcription en cours…" : "Générer la transcription"}
                 </Button>
+                <span className="text-xs text-muted-foreground">ou coller un JSON :</span>
+                <textarea
+                  className="flex-1 min-w-[200px] min-h-[60px] rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  placeholder='{"segments":[{"start":0,"end":1.5,"text":"Bonjour"}]}'
+                  value={transcriptJsonInput}
+                  onChange={(e) => setTranscriptJsonInput(e.target.value)}
+                />
+                <Button type="button" variant="secondary" onClick={applyTranscriptJson}>
+                  Importer
+                </Button>
               </div>
               {transcribeError && (
                 <p className="text-sm text-destructive">{transcribeError}</p>
@@ -415,7 +441,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
               <div className="max-h-48 overflow-y-auto space-y-2 rounded-md border border-border p-2">
                 {transcriptSegments.length === 0 && !transcribing && (
                   <p className="text-sm text-muted-foreground">
-                    Cliquez sur « Générer la transcription » pour transcrire l’audio en cours avec Whisper.
+                    Cliquez sur « Générer la transcription » pour transcrire l’audio en cours avec Whisper, ou importez un JSON.
                   </p>
                 )}
                 {transcriptSegments.map((seg, idx) => {
