@@ -43,6 +43,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
   const [transcriptSegments, setTranscriptSegments] = useState<TranscriptSegment[]>([]);
   const [transcribing, setTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
+  const [showIntroVideo, setShowIntroVideo] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
   const waveformRef = useRef<HTMLCanvasElement | null>(null);
@@ -52,6 +53,22 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
   const audioSrc = currentTrack?.src ?? null;
   const { samples, loading: waveformLoading } = useAudioWaveform(audioSrc);
   const hasAudio = Boolean(currentTrack && audioSrc);
+
+  // ——— Ne jouer la vidéo d’intro qu’une seule fois par navigateur ———
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const alreadyShown = window.localStorage.getItem("introVideoShown");
+    if (alreadyShown === "1") {
+      setShowIntroVideo(false);
+    }
+  }, []);
+
+  const hideIntroVideoForever = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("introVideoShown", "1");
+    }
+    setShowIntroVideo(false);
+  };
 
   // ——— Upload (on garde le File pour la transcription Whisper) ———
   const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -335,8 +352,25 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
   }, [samples, duration, currentTime, hoverTime]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
-      <div className="max-w-2xl w-full space-y-4">
+    <div className="relative flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4 overflow-hidden">
+      {showIntroVideo && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-white transition-opacity duration-700 ease-out">
+          <video
+            autoPlay
+            muted
+            playsInline
+            className="w-full h-full object-cover pointer-events-auto"
+            onEnded={hideIntroVideoForever}
+            onError={hideIntroVideoForever}
+          >
+            <source src="Vidéo3.mp4" type="video/mp4" />
+          </video>
+        </div>
+      )}
+      <div
+        className={`max-w-2xl w-full space-y-4 transform transition-all duration-700 ease-out ${showIntroVideo ? "opacity-0 translate-y-4" : "opacity-100 translate-y-0"
+          }`}
+      >
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Audio Player</h1>
         </div>
