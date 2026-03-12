@@ -32,11 +32,6 @@ export interface TranscriptSegment {
   text: string;
 }
 
-/** Format JSON possible retourné par Whisper */
-interface WhisperSegmentsResponse {
-  segments?: Array<{ start: number; end: number; text: string }>;
-}
-
 const AudioPlayer: React.FC<AudioPlayerProps> = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(0);
@@ -56,13 +51,14 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
   const currentTrack = tracks[currentTrackIndex];
   const audioSrc = currentTrack?.src ?? null;
   const { samples, loading: waveformLoading } = useAudioWaveform(audioSrc);
+  const hasAudio = Boolean(currentTrack && audioSrc);
 
   // ——— Upload (on garde le File pour la transcription Whisper) ———
   const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
       const newTracks: Track[] = Array.from(files).map((file) => ({
-        title: file.name,
+        title: file.name.replace(/\.[^/.]+$/, ""),
         artist: "Unknown Artist",
         src: URL.createObjectURL(file),
         file,
@@ -70,6 +66,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
       setTracks((prev) => [...prev, ...newTracks]);
     }
   };
+
+
 
   // ——— Play / Pause (sans repartir du début) ———
   const handlePlayPause = () => {
@@ -192,6 +190,43 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
     );
   };
 
+  const getActiveSegment = () => {
+    const idx = transcriptSegments.findIndex(
+      (s) => currentTime >= s.start && currentTime <= s.end
+    );
+    if (idx < 0) return null;
+    return { index: idx, seg: transcriptSegments[idx] };
+  };
+
+  const downloadTextFile = (filename: string, content: string, mime = "text/plain;charset=utf-8") => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadTranscriptTxt = () => {
+    if (!currentTrack || transcriptSegments.length === 0) return;
+    const lines = transcriptSegments.map((s) => `[${formatTime(s.start)} - ${formatTime(s.end)}] ${s.text}`);
+    const safeTitle = (currentTrack.title || "transcript").replace(/[\\/:*?"<>|]+/g, "-");
+    downloadTextFile(`${safeTitle}.txt`, lines.join("\n"));
+  };
+
+  const handleDownloadTranscriptJson = () => {
+    if (!currentTrack || transcriptSegments.length === 0) return;
+    const payload = {
+      track: { title: currentTrack.title, artist: currentTrack.artist },
+      segments: transcriptSegments,
+    };
+    const safeTitle = (currentTrack.title || "transcript").replace(/[\\/:*?"<>|]+/g, "-");
+    downloadTextFile(`${safeTitle}.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+  };
+
   // ——— Générer la transcription (Whisper) sur l’audio en cours ———
   const getAudioFileForTranscribe = async (): Promise<File | null> => {
     const track = currentTrack;
@@ -307,146 +342,210 @@ const AudioPlayer: React.FC<AudioPlayerProps> = () => {
         </div>
         <Card>
           <CardContent className="flex flex-col gap-4 p-6">
-            {/* if (!audio || !tracks.length) return;*/}
-            <label className="rounded-full w-24 h-24 object-cover mx-auto cursor-pointer">
-              {currentTrack
-                ? <Image
-                  src="/music.svg"
-                  alt="Album Cover"
-                  width={100}
-                  height={100}
-                  className="rounded-full w-24 h-24 object-cover mx-auto"
+            {/* Zone d’upload/cover : cliquable, simple, et “profondeur” sur l’icône */}
+            <div className="flex flex-col items-center gap-3">
+              <label className="rounded-full w-24 h-24 object-cover mx-auto cursor-pointer">
+                {currentTrack
+                  ? <Image
+                    src="/music.svg"
+                    alt="Album Cover"
+                    width={100}
+                    height={100}
+                    className="rounded-full w-24 h-24 object-cover mx-auto"
+                  />
+                  : <Sphere icon={UploadIcon} size={100} color="#337180" />
+                }
+                <input
+                  type="file"
+                  accept="audio/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleUpload}
                 />
-                : <Sphere icon={UploadIcon} size={100} color="#337180" />
-              }
-              <input
-                type="file"
-                accept="audio/*"
-                multiple
-                className="hidden"
-                onChange={handleUpload}
-              />
-            </label>
+              </label>
 
-            <div className="text-center">
-              <h2 className="text-xl font-bold">
-                {currentTrack?.title ?? "Audio Title"}
-              </h2>
-              <p className="text-muted-foreground">
-                {currentTrack?.artist ?? "Person Name"}
-              </p>
-            </div>
-
-            {/* Barre de progression cliquable (seek) */}
-            <div className="w-full">
-              <div
-                ref={progressBarRef}
-                role="progressbar"
-                aria-valuenow={progress}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                className="h-2 w-full rounded-full bg-primary/20 cursor-pointer overflow-hidden"
-                onClick={handleProgressBarClick}
-              >
-                <div
-                  className="h-full bg-primary transition-none"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-sm text-muted-foreground mt-1">
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-            </div>
-
-            {/* Waveform réelle avec tête de lecture et survol */}
-            {currentTrack && (
-              <div className="w-full">
-                <p className="text-xs text-muted-foreground mb-1">
-                  Courbe audio — clic pour placer la lecture, survol pour l’instant
-                </p>
-                <canvas
-                  ref={waveformRef}
-                  className="w-full h-20 rounded-md cursor-pointer border border-border"
-                  style={{ touchAction: "none" }}
-                  onMouseMove={handleWaveformMouseMove}
-                  onMouseLeave={handleWaveformMouseLeave}
-                  onClick={handleWaveformClick}
-                />
-                {waveformLoading && (
-                  <p className="text-xs text-muted-foreground">Chargement de la waveform…</p>
-                )}
-                {hoverTime !== null && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Survol : {formatTime(hoverTime)}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="flex items-center gap-4 justify-center">
-              <Button variant="ghost" size="icon" onClick={() => setCurrentTrackIndex((i) => (i === 0 ? tracks.length - 1 : i - 1))}>
-                <RewindIcon className="w-6 h-6" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={handlePlayPause}>
-                {isPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" />}
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => setCurrentTrackIndex((i) => (i + 1) % tracks.length)}>
-                <ForwardIcon className="w-6 h-6" />
-              </Button>
-            </div>
-
-            {/* Transcription : génération Whisper ou import JSON, affichage éditable synchronisé */}
-            <div className="w-full border-t pt-4 space-y-3">
-              <h3 className="font-semibold">Transcription (éditable, synchronisée à l’audio)</h3>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  onClick={handleGenerateTranscription}
-                  disabled={!currentTrack || transcribing}
-                >
-                  <MicIcon className="w-4 h-4 mr-2" />
-                  {transcribing ? "Transcription en cours…" : "Générer la transcription"}
-                </Button>
-              </div>
-              {transcribeError && (
-                <p className="text-sm text-destructive">{transcribeError}</p>
-              )}
-              <div className="max-h-48 overflow-y-auto space-y-2 rounded-md border border-border p-2">
-                {transcriptSegments.length === 0 && !transcribing && (
+              {!hasAudio ? (
+                <div className="text-center space-y-1">
+                  <h2 className="text-lg font-semibold">Importer un audio</h2>
                   <p className="text-sm text-muted-foreground">
-                    Cliquez sur « Générer la transcription » pour transcrire l’audio en cours avec Whisper.
+                    Clique sur l’icône pour charger un fichier et commencer.
                   </p>
-                )}
-                {transcriptSegments.map((seg, idx) => {
-                  const isActive = currentTime >= seg.start && currentTime <= seg.end;
-                  return (
-                    <div
-                      key={`${seg.start}-${idx}`}
-                      ref={isActive ? currentSegmentRef : null}
-                      className={`rounded px-2 py-1 ${isActive ? "bg-primary/15 ring-1 ring-primary/30" : ""}`}
-                    >
-                      <span className="text-xs text-muted-foreground mr-2">
-                        {formatTime(seg.start)} → {formatTime(seg.end)}
-                      </span>
-                      <input
-                        type="text"
-                        className="w-full bg-transparent text-sm outline-none border-b border-transparent focus:border-primary"
-                        value={seg.text}
-                        onChange={(e) => updateSegmentText(idx, e.target.value)}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <h2 className="text-xl font-bold">{currentTrack?.title ?? "Audio"}</h2>
+                  <br />
+                </div>
+              )}
             </div>
 
-            <audio
-              ref={audioRef}
-              onTimeUpdate={handleTimeUpdate}
-              onLoadedMetadata={handleLoadedMetadata}
-              onEnded={handleEnded}
-            />
+            {/* Tant qu’aucun audio n’est chargé, on masque le reste pour garder une UI très simple */}
+            {!hasAudio ? null : (
+              <>
+
+                {/* Barre de progression cliquable (seek) */}
+                <div className="w-full">
+                  <div
+                    ref={progressBarRef}
+                    role="progressbar"
+                    aria-valuenow={progress}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    className="h-2 w-full rounded-full bg-primary/20 cursor-pointer overflow-hidden"
+                    onClick={handleProgressBarClick}
+                  >
+                    <div
+                      className="h-full bg-primary transition-none"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-sm text-muted-foreground mt-1">
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{formatTime(duration)}</span>
+                  </div>
+                </div>
+
+                {/* Waveform réelle avec tête de lecture et survol */}
+                <div className="w-full">
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Courbe audio — clic pour placer la lecture, survol pour l’instant
+                  </p>
+                  <canvas
+                    ref={waveformRef}
+                    className="w-full h-20 rounded-md cursor-pointer border border-border"
+                    style={{ touchAction: "none" }}
+                    onMouseMove={handleWaveformMouseMove}
+                    onMouseLeave={handleWaveformMouseLeave}
+                    onClick={handleWaveformClick}
+                  />
+                  {waveformLoading && (
+                    <p className="text-xs text-muted-foreground">Chargement de la waveform…</p>
+                  )}
+                  {hoverTime !== null && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Survol : {formatTime(hoverTime)}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-4 justify-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setCurrentTrackIndex((i) => (i === 0 ? tracks.length - 1 : i - 1))}
+                    disabled={tracks.length <= 1}
+                  >
+                    <RewindIcon className="w-6 h-6" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={handlePlayPause} disabled={!duration}>
+                    {isPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setCurrentTrackIndex((i) => (i + 1) % tracks.length)}
+                    disabled={tracks.length <= 1}
+                  >
+                    <ForwardIcon className="w-6 h-6" />
+                  </Button>
+                </div>
+
+                {/* Transcription : génération Whisper, affichage éditable synchronisé, export */}
+                <div className="w-full border-t pt-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-semibold">Transcription (éditable, synchronisée)</h3>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={handleGenerateTranscription}
+                      disabled={transcribing}
+                      className="cursor-pointer"
+                    >
+                      <MicIcon className="w-4 h-4 mr-2" />
+                      {transcribing ? "Transcription en cours…" : "Générer la transcription"}
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleDownloadTranscriptTxt}
+                      disabled={transcriptSegments.length === 0}
+                      className="cursor-pointer"
+                    >
+                      Télécharger (.txt)
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleDownloadTranscriptJson}
+                      disabled={transcriptSegments.length === 0}
+                      className="cursor-pointer"
+                    >
+                      Télécharger (.json)
+                    </Button>
+                  </div>
+
+                  {transcribeError && (
+                    <p className="text-sm text-destructive">{transcribeError}</p>
+                  )}
+
+                  {/* Bloc segments */}
+                  <div className="relative max-h-56 overflow-y-auto space-y-2 rounded-md border border-border p-2">
+                    {transcribing && (
+                      <div className="absolute inset-0 bg-background/80 backdrop-blur-[1px] flex items-center justify-center rounded-md">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span className="inline-block w-4 h-4 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+                          Génération Whisper en cours…
+                        </div>
+                      </div>
+                    )}
+
+                    {transcriptSegments.length === 0 && !transcribing && (
+                      <p className="text-sm text-muted-foreground">
+                        Clique sur « Générer la transcription » pour transcrire l’audio en cours.
+                      </p>
+                    )}
+
+                    {transcriptSegments.map((seg, idx) => {
+                      const isActive = currentTime >= seg.start && currentTime <= seg.end;
+                      return (
+                        <div
+                          key={`${seg.start}-${idx}`}
+                          ref={isActive ? currentSegmentRef : null}
+                          className={`rounded px-2 py-1 ${isActive ? "bg-primary/15 ring-1 ring-primary/30" : ""}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              onClick={() => seekTo(seg.start)}
+                              title="Aller à ce timestamp"
+                            >
+                              {formatTime(seg.start)} → {formatTime(seg.end)}
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            className="w-full bg-transparent text-sm outline-none border-b border-transparent focus:border-primary"
+                            value={seg.text}
+                            onChange={(e) => updateSegmentText(idx, e.target.value)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <audio
+                  ref={audioRef}
+                  onTimeUpdate={handleTimeUpdate}
+                  onLoadedMetadata={handleLoadedMetadata}
+                  onEnded={handleEnded}
+                />
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

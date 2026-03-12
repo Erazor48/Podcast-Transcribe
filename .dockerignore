@@ -56,3 +56,6 @@ docker-compose.yml
 *.webm
 *.mp4
 *.mov
+
+# perso files
+update_to_do.md
