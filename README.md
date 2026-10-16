@@ -9,45 +9,60 @@ app_port: 7860
 
 # Podcast Transcribe
 
-Application de transcription audio avec [Next.js](https://nextjs.org) et l'API Whisper.
+A web app for podcasters: load an audio file, transcribe it locally with [OpenAI Whisper](https://github.com/openai/whisper), then edit the transcript segment by segment while it stays synchronized with the audio.
 
-## Déploiement sur Hugging Face Spaces
+## Features
 
-Ce Space utilise **Docker**. Hugging Face build automatiquement l'image depuis le `Dockerfile` et expose l'app sur le port 7860.
+- Audio player with a real waveform drawn from the loaded file (any `audio/*` file).
+- Transcription with local `openai-whisper` through a Python script; no API key needed.
+- Time-stamped segments (start, end, text) shown next to the player, with the text editable in place.
+- Export of the edited transcript as `.txt` or `.json`.
 
-**Variable d'environnement requise** : ajoute `OPENAI_API_KEY` dans Settings → Repository secrets de ton Space pour activer la transcription via l'API Whisper.
+## How it works
 
-## Getting Started (développement local)
+The Next.js page uploads the audio to `POST /api/transcribe-local`. The route saves it to a temporary file, runs `scripts/transcribe_local.py`, and returns `{ "segments": [{ "start", "end", "text" }] }`.
 
-First, run the development server:
+The repo also contains `POST /api/transcribe`, which sends the file to the OpenAI Whisper API (needs `OPENAI_API_KEY`). The current UI does not call it.
+
+## Run locally
+
+Requirements: Node.js 20+, Python 3.10+, and [`ffmpeg`](https://ffmpeg.org/) on your `PATH`.
 
 ```bash
+# 1. Python environment with Whisper (the app uses ./.venv automatically if it exists)
+uv venv
+uv pip install -r scripts/requirements.txt
+
+# 2. Web app
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>. The first transcription downloads the Whisper model (`base` by default).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Environment variables (optional):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `WHISPER_MODEL` | Whisper model: `tiny`, `base`, `small`, `medium`, `large`, `turbo` | `base` |
+| `WHISPER_PYTHON` | Python command used to run the script | `./.venv` Python, else `python3` |
+| `OPENAI_API_KEY` | Only for the unused `/api/transcribe` route | none |
 
-## Learn More
+More detail on the local setup: [`scripts/README.md`](scripts/README.md).
 
-To learn more about Next.js, take a look at the following resources:
+## Docker / Hugging Face Spaces
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The `Dockerfile` builds the Next.js app, installs Python, `ffmpeg` and `openai-whisper`, and serves on port 7860, which is the port the Space metadata above declares.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+docker build -t podcast-transcribe .
+docker run -p 7860:7860 podcast-transcribe
+```
 
-## Deploy on Vercel
+## Stack
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Next.js 16, React 19, TypeScript, Tailwind CSS 4, shadcn/ui components, Python with `openai-whisper`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Credits
+
+The audio player started from [this tutorial](https://asharibali.medium.com/building-an-audio-player-app-with-next-js-80d06cc1d7d8); see `Explanation_Personnal.md` for the project notes.
