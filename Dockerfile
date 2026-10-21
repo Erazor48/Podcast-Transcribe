@@ -1,11 +1,11 @@
-FROM node:20-bullseye AS deps
+FROM node:20-bookworm AS deps
 WORKDIR /app
 
 # Installation des dépendances Node
 COPY package*.json ./
 RUN npm install --legacy-peer-deps
 
-FROM node:20-bullseye AS builder
+FROM node:20-bookworm AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -16,7 +16,7 @@ ENV NODE_ENV=production
 # Build Next.js en mode production
 RUN npm run build
 
-FROM node:20-bullseye AS runner
+FROM node:20-bookworm AS runner
 WORKDIR /app
 
 # Python + ffmpeg pour la transcription locale (openai-whisper)
@@ -24,11 +24,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     ffmpeg \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # openai-whisper (inclut PyTorch – image ~2–3 Go, premier build long)
 COPY scripts/ ./scripts/
-RUN pip3 install --no-cache-dir -r scripts/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r scripts/requirements.txt
 
 ENV NODE_ENV=production
 # Hugging Face expose généralement le port 7860
